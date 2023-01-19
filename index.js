@@ -7,40 +7,44 @@ const port = process.argv[3] || 8000
 
 const key = Buffer.from(servicePublicKey, 'hex')
 const handler = (req, res) => {
-  const createSocket = () => dht.connect(key)
+  const createSocket = () => dht.connect(key, { reusableSocket: true })
   const serverSocket = createSocket()
 
   serverSocket.on('data', (d) => {
-    console.log('d', d)
+    res.write(d)
+    if (d.length < 65536)  {
+      res.end()
+      serverSocket.destroy()
+    }
   })
-
-  serverSocket.pipe(res, (err) => {
-    console.log('pipe done', err)
-    serverSocket.end()
+  req.on('abort', () => {
+    serverSocket.destroy()
   })
-  serverSocket.on('close', () => console.log('close'))
-  serverSocket.on('end', () => console.log('end'))
-  serverSocket.on('error', (err) => console.log('error', err))
-  serverSocket.on('finish', () => {
-    console.log('finish')
-    res.end()
+  req.on('error', () => {
     serverSocket.destroy()
   })
 
-  serverSocket.write(`${req.method} ${req.url} HTTP/1.1\r\n`)
   const headers = []
   for (let i = 0; i < req.rawHeaders.length; i = i + 2) {
     const header = `${req.rawHeaders[i]}: ${req.rawHeaders[i+1]}`
     headers.push(header)
   }
-  const head = headers.join('\r\n') + '\r\n\r\n'
+  const head = `${req.method} ${req.url} HTTP/1.1\r\n` + headers.join('\r\n') + '\r\n\r\n'
   serverSocket.write(head)
- 
-  // serverSocket.end()
-  // req.pipe(serverSocket)
+
+  req.on('data', chunk => {
+    serverSocket.write(chunk)
+  })
 }
 
 const server = http.createServer(handler)
+server.on('clientError', (err, socket) => {
+  if (err.code === 'ECONNRESET' || !socket.writable) {
+    return;
+  }
+
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+});
 
 server.listen(port, () => {
   console.log('http proxy server listening on port:', port)
