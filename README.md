@@ -47,6 +47,5 @@ Now call the hyper-http-proxy
 curl localhost:8000/pokedex.json
 ```
 
-I cant figure out the best way to make the stream close....
-
+Its now all working, but we use a hacky way to know the server secret stream is done.
 
